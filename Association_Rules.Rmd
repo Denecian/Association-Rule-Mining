@@ -1,0 +1,186 @@
+---
+title: "COMP Assignment 2"
+author: "Denecian Dennis"
+date: "3/31/2021"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+always_allow_html: true
+---
+
+# Preliminary
+
+Let us first import all the necessary libraries.
+```{r}
+library('arules') 
+library('backports') 
+library('zeallot') 
+library('arulesViz') 
+library('chron')
+```
+
+Importing the online retail data set.
+```{r}
+ORData <- read.csv(file.choose(),stringsAsFactors = TRUE)
+```
+
+Looking at the summary of the data below.
+```{r}
+summary(ORData)
+```
+
+Looking at the summary of the `country` attribute of the data set.
+```{r}
+summary(ORData$Country)
+```
+
+# Data Exploration
+
+I was assigned the country Australia to identify association rules that can be used by the country manager to understand the buying patterns of their customers. Let us first extract the data relating to the country Australia.
+```{r}
+Aust <- ORData[ORData$Country=='Australia',]
+head(Aust)
+```
+
+### Removing the unwanted attributes 
+
+For this analysis we do not require the `Invoice Date` field and given that all the data is relating to `Australia`, we can also remove this attribute.
+```{r}
+Aust$InvoiceDate <-NULL
+Aust$Country <- NULL
+rownames(Aust) <- NULL
+```
+
+### Missing Values
+
+```{r}
+apply(Aust,2,function(k) sum(is.na(k))) 
+```
+
+Here we see that there are no missing values in the data set.
+
+### Noise
+
+```{r}
+str(Aust)
+```
+
+We can observe leading white spaces in the `Description` attribute. Let us remove these now.
+
+```{r}
+Aust$Description <- trimws(Aust$Description) 
+Aust$Description<-gsub(" ","_",Aust$Description)
+str(Aust$Description)
+```
+
+### Outliers
+
+```{r}
+summary(Aust[,c('Quantity', 'UnitPrice')])
+```
+
+We have seen that there exist no missing values in all the attributes. Given that, quantity and price are the two numerical variables left to check for outliers. 
+
+We see that there exist negative values for quantity. Since the data contain transactions, we can assume that these negative values are refunds made by customers.
+
+### Importing Data as Transaction Objects
+
+```{r}
+write.csv(Aust, file='2021-clean-australia.csv', row.names = FALSE)
+
+AustData <-read.transactions('2021-clean-australia.csv', format = c('single'),header = TRUE, rm.duplicates = FALSE, cols = c('InvoiceNo','StockCode'),sep=',')
+```
+
+# Association Rules
+
+```{r}
+summary(AustData)
+```
+
+
+```{r}
+s_lst <- c(22720, 20725, 21731, 22090, 22138)
+d_lst<-list()
+
+for (i in 1:length(s_lst)){
+  print(Aust[Aust$StockCode==s_lst[i],]$Description)
+
+}
+```
+
+We can see that the top 5 most frequent items bought are:
+
+|Frequent Item| No of times Bought|
+|:------------|:------------------|
+|SET_OF_3_CAKE_TINS_PANTRY_DESIGN|10|
+|LUNCH_BAG_RED_RETROSPOT|9|
+|RED_TOADSTOOL_LED_NIGHT_LIGHT|9|
+|PAPER_BUNTING_RETROSPOT|8|
+|BAKING_SET_9_PIECE_RETROSPOT|8|
+
+```{r}
+itemFrequencyPlot(AustData, topN=20)
+```
+
+Here we see the top 20 most frequent item bought in Australia by stick code.
+
+```{r echo=TRUE}
+Aust.rules <- apriori(AustData, parameter = list(conf=0.90, supp=0.07, minlen=2, maxlen=3, target='rules'))
+```
+
+```{r}
+inspect(Aust.rules)
+```
+
+With a confidence level of 90% and support of support of 7% we have generated 54 association rules.
+
+```{r}
+summary(Aust.rules)
+```
+
+From the summary statistics we see that with the minimun and maximun confidence and support levels we have generated 25 rules with length of 2 and 29 rules with length of 3.
+
+
+We can also see the statistics for the lift of the 54 rules generated. Given that the median and maximum lift values and the lift value within the 3rd quartile are all the same; we can assume that the distribution of the life values are skewed to the right.
+
+Let us filter the rules for this lift value in an effort to narrow down on the strongest rules.
+
+
+```{r}
+subset.rules <- Aust.rules[quality(Aust.rules)$lift>13]
+inspect(subset.rules)
+```
+
+The next thing we want to do is filter the data for redundant rules.
+
+```{r}
+subset.rules <- subset.rules[!is.redundant(subset.rules)]
+inspect(subset.rules)
+```
+
+From this step we have reduced the number of rules from 28 to 14.
+
+```{r}
+plot(subset.rules)
+```
+
+Here we see a scatter plot of the 14 association rules. 
+
+```{r}
+plot(subset.rules, method = "graph",  engine = "htmlwidget")
+```
+
+The visualization above shows a mapping of each rules and how each items rules connect to each rule.
+
+```{r}
+plot(subset.rules, method = "matrix",  engine = "htmlwidget")
+```
+
+Using the association rules above, we can note the following:
+\begin{enumerate}
+  \item There exist strong association rules developing around six (6)items. 
+  \item StockNo 21843 and 20979 have strong association rules between the stocks. Additional, no rules exists between these two stocks and the other four (4) stocks.
+  \item All the fourteen (14) rules have a confidence of one (1) which means 100% of the customers who bought the items on the left hand side will also buy the items on the right hand side for each of the 14 association rules.
+  \item All fourteen (14) rules suggest high co-occurrence and should be looked into to gain a better understanding of the buying patterns of the customers in Australia.
+\end{enumerate}
